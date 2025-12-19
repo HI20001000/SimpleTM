@@ -26,6 +26,15 @@ if __name__ == '__main__':
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--use_svmd', action='store_true', default=False, help='enable SVMD-based preprocessing')
+    parser.add_argument('--svmd_cache_dir', type=str, default=None, help='cache directory for SVMD decompositions')
+    parser.add_argument('--svmd_k', type=int, default=5, help='target number of SVMD modes (adaptive)')
+    parser.add_argument('--svmd_max_modes', type=int, default=10, help='maximum effective modes to retain')
+    parser.add_argument('--svmd_max_iter', type=int, default=500, help='upper bound on SVMD iterations')
+    parser.add_argument('--svmd_max_runtime', type=float, default=5.0, help='maximum runtime (seconds) per SVMD call')
+    parser.add_argument('--svmd_downsample', type=int, default=1, help='stride used for optional downsampling before SVMD')
+    parser.add_argument('--svmd_long_series_len', type=int, default=5000, help='length threshold to relax SVMD iterations')
+    parser.add_argument('--svmd_long_series_iter', type=int, default=250, help='reduced iteration cap for long series')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
