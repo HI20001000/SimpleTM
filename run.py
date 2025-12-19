@@ -26,6 +26,7 @@ if __name__ == '__main__':
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--num_svmd_modes', type=int, default=0, help='number of SVMD modes appended to the original 7 channels')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -97,6 +98,9 @@ if __name__ == '__main__':
     parser.add_argument('--fix_seed', type=int, default=2025, help='gpu')
     
     args = parser.parse_args()
+    args.enc_in = 7 + args.num_svmd_modes
+    args.dec_in = 7 + args.num_svmd_modes
+    args.c_out = 7
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
     fix_seed = args.fix_seed
