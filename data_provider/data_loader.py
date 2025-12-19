@@ -5,65 +5,48 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
+from utils.svmd import SVMDSettings, apply_svmd_with_cache
 import warnings
 
 warnings.filterwarnings('ignore')
 
-_scaler_cache = {}
 
-
-def _get_or_create_scaler(cache_key, train_data):
-    scaler = _scaler_cache.get(cache_key)
-    if scaler is None:
-        scaler = StandardScaler()
-        scaler.fit(train_data)
-        _scaler_cache[cache_key] = scaler
-    return scaler
-
-
-def _run_svmd(signal):
-    try:
-        from SVMD import SVMD as svmd_func
-    except ImportError:
-        try:
-            from svmd import SVMD as svmd_func
-        except ImportError as exc:
-            raise ImportError("SVMD package is required for mode decomposition.") from exc
-
-    u_eff = svmd_func(signal)
-    if isinstance(u_eff, (list, tuple)):
-        u_eff = u_eff[0]
-    u_eff = np.asarray(u_eff)
-    if u_eff.ndim == 1:
-        u_eff = u_eff[np.newaxis, :]
-    return u_eff
-
-
-def _append_svmd_columns(df_raw, df_data, target):
-    u_eff = _run_svmd(df_raw[target].values)
-
-    if u_eff.shape[0] == len(df_raw) and u_eff.shape[1] != len(df_raw):
-        u_eff = u_eff.T
-
-    aligned_length = min(len(df_raw), u_eff.shape[1])
-    u_eff = u_eff[:, :aligned_length]
-
-    df_raw = df_raw.iloc[:aligned_length].reset_index(drop=True)
-    df_data = df_data.iloc[:aligned_length].reset_index(drop=True)
-
-    svmd_columns = pd.DataFrame(
-        u_eff.T,
-        columns=[f"{target}_svmd_{i}" for i in range(u_eff.shape[0])],
+def _build_svmd_settings(
+        use_svmd=False,
+        svmd_cache_dir=None,
+        svmd_k=5,
+        svmd_max_modes=10,
+        svmd_max_iter=500,
+        svmd_max_runtime=5.0,
+        svmd_downsample=1,
+        svmd_long_series_len=5000,
+        svmd_long_series_iter=250,
+):
+    return SVMDSettings(
+        use_svmd=use_svmd,
+        k=svmd_k,
+        max_iter=svmd_max_iter,
+        max_effective_modes=svmd_max_modes,
+        max_runtime=svmd_max_runtime,
+        downsample_stride=svmd_downsample,
+        cache_dir=svmd_cache_dir,
+        long_series_length=svmd_long_series_len,
+        long_series_max_iter=svmd_long_series_iter,
     )
-    df_data = pd.concat([df_data, svmd_columns], axis=1)
 
-    return df_raw, df_data
+
+def _maybe_apply_svmd(data, root_path, data_path, svmd_settings: SVMDSettings, set_identifier: str = ""):
+    if not svmd_settings.use_svmd:
+        return data
+    cache_root = svmd_settings.cache_dir or os.path.join(root_path, 'svmd_cache')
+    cache_key = f"{os.path.basename(data_path)}_{set_identifier}"
+    return apply_svmd_with_cache(data, cache_root=cache_root, cache_key=cache_key, settings=svmd_settings)
 
 
 class Dataset_ETT_hour(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h', svmd_settings=None):
         if size == None:
             self.seq_len = 24 * 4 * 4
             self.label_len = 24 * 4
@@ -81,6 +64,7 @@ class Dataset_ETT_hour(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.svmd_settings = svmd_settings or SVMDSettings()
 
         self.root_path = root_path
         self.data_path = data_path
@@ -128,7 +112,8 @@ class Dataset_ETT_hour(Dataset):
             data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2]
+        self.data_x = _maybe_apply_svmd(self.data_x, self.root_path, self.data_path, self.svmd_settings, self.set_type)
+        self.data_y = self.data_x
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
@@ -154,7 +139,7 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t'):
+                 target='OT', scale=True, timeenc=0, freq='t', svmd_settings=None):
         if size == None:
             self.seq_len = 24 * 4 * 4
             self.label_len = 24 * 4
@@ -172,6 +157,7 @@ class Dataset_ETT_minute(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.svmd_settings = svmd_settings or SVMDSettings()
 
         self.root_path = root_path
         self.data_path = data_path
@@ -221,7 +207,8 @@ class Dataset_ETT_minute(Dataset):
             data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2]
+        self.data_x = _maybe_apply_svmd(self.data_x, self.root_path, self.data_path, self.svmd_settings, self.set_type)
+        self.data_y = self.data_x
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
@@ -247,7 +234,7 @@ class Dataset_ETT_minute(Dataset):
 class Dataset_Custom(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h', svmd_settings=None):
         if size == None:
             self.seq_len = 24 * 4 * 4
             self.label_len = 24 * 4
@@ -265,6 +252,7 @@ class Dataset_Custom(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.svmd_settings = svmd_settings or SVMDSettings()
 
         self.root_path = root_path
         self.data_path = data_path
@@ -317,7 +305,8 @@ class Dataset_Custom(Dataset):
             data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2]
+        self.data_x = _maybe_apply_svmd(self.data_x, self.root_path, self.data_path, self.svmd_settings, self.set_type)
+        self.data_y = self.data_x
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
@@ -343,7 +332,7 @@ class Dataset_Custom(Dataset):
 class Dataset_PEMS(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
+                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None, svmd_settings=None):
         self.seq_len = size[0]
         self.label_len = size[1]
         self.pred_len = size[2]
@@ -356,6 +345,7 @@ class Dataset_PEMS(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.svmd_settings = svmd_settings or SVMDSettings()
 
         self.root_path = root_path
         self.data_path = data_path
@@ -386,8 +376,8 @@ class Dataset_PEMS(Dataset):
         df = pd.DataFrame(data)
         df = df.fillna(method='ffill', limit=len(df)).fillna(method='bfill', limit=len(df)).values
 
-        self.data_x = df
-        self.data_y = df
+        self.data_x = _maybe_apply_svmd(df, self.root_path, self.data_path, self.svmd_settings, self.set_type)
+        self.data_y = self.data_x
 
     def __getitem__(self, index):
         if self.set_type == 2:  
@@ -418,7 +408,7 @@ class Dataset_PEMS(Dataset):
 class Dataset_Solar(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h', svmd_settings=None):
         self.seq_len = size[0]
         self.label_len = size[1]
         self.pred_len = size[2]
@@ -431,6 +421,7 @@ class Dataset_Solar(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.svmd_settings = svmd_settings or SVMDSettings()
 
         self.root_path = root_path
         self.data_path = data_path
@@ -467,8 +458,9 @@ class Dataset_Solar(Dataset):
             self.scaler.fit(df_data)
             data = df_data
 
-        self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2]
+        filtered = _maybe_apply_svmd(data[border1:border2], self.root_path, self.data_path, self.svmd_settings, self.set_type)
+        self.data_x = filtered
+        self.data_y = filtered
 
     def __getitem__(self, index):
         s_begin = index
@@ -493,7 +485,7 @@ class Dataset_Solar(Dataset):
 class Dataset_Pred(Dataset):
     def __init__(self, root_path, flag='pred', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, inverse=False, timeenc=0, freq='15min', cols=None):
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='15min', cols=None, svmd_settings=None):
         if size == None:
             self.seq_len = 24 * 4 * 4
             self.label_len = 24 * 4
@@ -511,6 +503,8 @@ class Dataset_Pred(Dataset):
         self.timeenc = timeenc
         self.freq = freq
         self.cols = cols
+        self.svmd_settings = svmd_settings or SVMDSettings()
+        self.flag = flag
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
@@ -566,11 +560,11 @@ class Dataset_Pred(Dataset):
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
 
-        self.data_x = data[border1:border2]
+        self.data_x = _maybe_apply_svmd(data[border1:border2], self.root_path, self.data_path, self.svmd_settings, self.flag)
         if self.inverse:
             self.data_y = df_data.values[border1:border2]
         else:
-            self.data_y = data[border1:border2]
+            self.data_y = self.data_x
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
