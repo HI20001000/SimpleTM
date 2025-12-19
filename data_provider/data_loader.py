@@ -71,14 +71,8 @@ class Dataset_ETT_hour(Dataset):
         self.__read_data__()
 
     def __read_data__(self):
-        self.scaler = StandardScaler()
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
-
-        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
-        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
-        border1 = border1s[self.set_type]
-        border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
@@ -86,11 +80,23 @@ class Dataset_ETT_hour(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
 
+        df_raw, df_data = _append_svmd_columns(df_raw, df_data, self.target)
+
+        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
+        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        border1s = [min(len(df_raw), b) for b in border1s]
+        border2s = [min(len(df_raw), b) for b in border2s]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
         if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
-            self.scaler.fit(train_data.values)
+            train_data = df_data[border1s[0]:border2s[0]].values
+            cache_key = (self.root_path, self.data_path, self.target, self.features)
+            self.scaler = _get_or_create_scaler(cache_key, train_data)
             data = self.scaler.transform(df_data.values)
         else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_data.values)
             data = df_data.values
 
         df_stamp = df_raw[['date']][border1:border2]
@@ -158,14 +164,8 @@ class Dataset_ETT_minute(Dataset):
         self.__read_data__()
 
     def __read_data__(self):
-        self.scaler = StandardScaler()
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
-
-        border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
-        border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
-        border1 = border1s[self.set_type]
-        border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
@@ -173,11 +173,23 @@ class Dataset_ETT_minute(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
 
+        df_raw, df_data = _append_svmd_columns(df_raw, df_data, self.target)
+
+        border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
+        border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
+        border1s = [min(len(df_raw), b) for b in border1s]
+        border2s = [min(len(df_raw), b) for b in border2s]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
         if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
-            self.scaler.fit(train_data.values)
+            train_data = df_data[border1s[0]:border2s[0]].values
+            cache_key = (self.root_path, self.data_path, self.target, self.features)
+            self.scaler = _get_or_create_scaler(cache_key, train_data)
             data = self.scaler.transform(df_data.values)
         else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_data.values)
             data = df_data.values
 
         df_stamp = df_raw[['date']][border1:border2]
@@ -247,13 +259,21 @@ class Dataset_Custom(Dataset):
         self.__read_data__()
 
     def __read_data__(self):
-        self.scaler = StandardScaler()
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
         cols = list(df_raw.columns)
         cols.remove(self.target)
         cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        df_raw, df_data = _append_svmd_columns(df_raw, df_data, self.target)
+
         num_train = int(len(df_raw) * 0.7)
         num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
@@ -262,17 +282,14 @@ class Dataset_Custom(Dataset):
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
-        if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
-            df_data = df_raw[cols_data]
-        elif self.features == 'S':
-            df_data = df_raw[[self.target]]
-
         if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
-            self.scaler.fit(train_data.values)
+            train_data = df_data[border1s[0]:border2s[0]].values
+            cache_key = (self.root_path, self.data_path, self.target, self.features)
+            self.scaler = _get_or_create_scaler(cache_key, train_data)
             data = self.scaler.transform(df_data.values)
         else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_data.values)
             data = df_data.values
 
         df_stamp = df_raw[['date']][border1:border2]
@@ -335,7 +352,6 @@ class Dataset_PEMS(Dataset):
         self.__read_data__()
 
     def __read_data__(self):
-        self.scaler = StandardScaler()
         data_file = os.path.join(self.root_path, self.data_path)
         print('data file:', data_file)
         data = np.load(data_file, allow_pickle=True)
@@ -350,8 +366,12 @@ class Dataset_PEMS(Dataset):
         data = total_data[self.set_type]
 
         if self.scale:
-            self.scaler.fit(data)
+            cache_key = (self.root_path, self.data_path, 'pems', self.features)
+            self.scaler = _get_or_create_scaler(cache_key, train_data)
             data = self.scaler.transform(data)
+        else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(train_data)
 
         df = pd.DataFrame(data)
         df = df.fillna(method='ffill', limit=len(df)).fillna(method='bfill', limit=len(df)).values
@@ -430,9 +450,12 @@ class Dataset_Solar(Dataset):
 
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
-            self.scaler.fit(train_data)
+            cache_key = (self.root_path, self.data_path, 'solar', self.features)
+            self.scaler = _get_or_create_scaler(cache_key, train_data)
             data = self.scaler.transform(df_data)
         else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_data)
             data = df_data
 
         filtered = _maybe_apply_svmd(data[border1:border2], self.root_path, self.data_path, self.svmd_settings, self.set_type)
@@ -498,8 +521,6 @@ class Dataset_Pred(Dataset):
             cols.remove(self.target)
             cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
-        border1 = len(df_raw) - self.seq_len
-        border2 = len(df_raw)
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
@@ -507,10 +528,18 @@ class Dataset_Pred(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
 
+        df_raw, df_data = _append_svmd_columns(df_raw, df_data, self.target)
+
+        border1 = max(0, len(df_raw) - self.seq_len)
+        border2 = len(df_raw)
+
         if self.scale:
-            self.scaler.fit(df_data.values)
+            cache_key = (self.root_path, self.data_path, self.target, self.features)
+            self.scaler = _get_or_create_scaler(cache_key, df_data.values)
             data = self.scaler.transform(df_data.values)
         else:
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_data.values)
             data = df_data.values
 
         tmp_stamp = df_raw[['date']][border1:border2]

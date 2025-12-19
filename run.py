@@ -106,6 +106,9 @@ if __name__ == '__main__':
     parser.add_argument('--fix_seed', type=int, default=2025, help='gpu')
     
     args = parser.parse_args()
+    args.enc_in = 7 + args.num_svmd_modes
+    args.dec_in = 7 + args.num_svmd_modes
+    args.c_out = 7
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
     fix_seed = args.fix_seed

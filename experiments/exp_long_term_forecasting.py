@@ -74,7 +74,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs, _ = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                outputs = outputs[:, :, :7]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                batch_y = batch_y[:, :, :7]
 
                 pred = outputs.detach().cpu()
                 true = batch_y.detach().cpu()
@@ -157,7 +159,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                        outputs = outputs[:, :, :7]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                        batch_y = batch_y[:, :, :7]
                         loss = criterion(outputs, batch_y) 
                         train_loss.append(loss.item())
                 else:
@@ -168,7 +172,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                     f_dim = -1 if self.args.features == 'MS' else 0                        
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    outputs = outputs[:, :, :7]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    batch_y = batch_y[:, :, :7]
                     
                     loss = criterion(outputs, batch_y) + self.args.l1_weight * attn[0] 
                     train_loss.append(loss.item())
@@ -265,7 +271,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                outputs = outputs[:, :, :7]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                batch_y = batch_y[:, :, :7]
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
